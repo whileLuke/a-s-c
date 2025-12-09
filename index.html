@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Average Speed Tracker — Camera Zones (OSRM)</title>
+<style>
+:root{--bg:#000;--card:#111;--accent:#0af;--text:#fff;--subtle:#999;--radius:18px}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}
+.container{padding:16px;max-width:740px;margin:auto;padding-bottom:env(safe-area-inset-bottom)}
+.card{background:var(--card);padding:18px;border-radius:var(--radius);margin-bottom:18px}
+input,button{width:100%;padding:12px;border-radius:12px;border:1px solid #222;background:#000;color:#fff;box-sizing:border-box}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.stat{background:var(--card);padding:18px;border-radius:var(--radius);text-align:center}
+.gauge{width:200px;height:100px;background:#1a1a1a;border-radius:200px 200px 0 0;margin:0 auto;position:relative;overflow:hidden;border:3px solid #222}
+.needle{width:4px;height:90px;background:var(--accent);position:absolute;bottom:0;left:50%;transform-origin:bottom center;transform:rotate(-90deg);border-radius:2px;transition:transform .25s}
+.install-prompt{display:none}
+.small{font-size:13px;color:var(--subtle)}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Average Speed Tracker — Camera Zones (OSRM)</h1>
+
+  <div class="card">
+    <label>Camera Zones Source (optional URL)</label>
+    <input id="zonesUrl" type="text" placeholder="/api/zones or https://example.com/zones.json" />
+    <button id="loadZones">Load Zones</button>
+    <div style="height:12px"></div>
+    <button id="setStart">Use My Location as Start</button>
+    <button id="begin">Start Tracking</button>
+    <button id="stop">Stop Tracking</button>
+    <div style="height:8px"></div>
+    <div class="small">This single-file version uses OSRM (router.project-osrm.org) to compute road distance to the end camera. If you host your own OSRM server, update <code>OSRM_BASE</code>.</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div>Current Speed</div><div id="curSpeed" class="stat-value">--</div></div>
+    <div class="stat"><div>Average So Far</div><div id="avgSpeed" class="stat-value">--</div></div>
+  </div>
+
+  <div class="stats" style="margin-top:14px">
+    <div class="stat"><div>Distance Travelled (zone)</div><div id="distTrav" class="stat-value">--</div></div>
+    <div class="stat"><div>Distance Left</div><div id="distLeft" class="stat-value">--</div></div>
+  </div>
+
+  <div class="card" style="text-align:center;margin-top:18px">
+    <div>Required Average Speed</div>
+    <div class="gauge"><div id="needle" class="needle"></div></div>
+    <div id="reqSpeed" class="gauge-value">--</div>
+    <div id="zoneName" style="margin-top:8px;color:var(--subtle)"></div>
+  </div>
+
+  <div class="card" id="status">Ready</div>
+</div>
+
+<script>
+/* ====== Utilities ====== */
+function toRad(d){return d*Math.PI/180}
+function haversine(lat1,lon1,lat2,lon2){const R=6371e3;const dLat=toRad(lat2-lat1);const dLon=toRad(lon2-lon1);const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
+function setStatus(t){document.getElementById('status').textContent=t}
+function updateGauge(speed,limit){const max=limit||150;const clamped=Math.min(max,Math.max(0,speed));const pct=clamped/max;const angle=-90+(180*pct);document.getElementById('needle').style.transform=`rotate(${angle}deg)`}
+
+/* ====== OSRM Configuration ====== */
+const OSRM_BASE = 'https://router.project-osrm.org'; // change to your OSRM server if needed
+const OSRM_ROUTE_THROTTLE_MS = 10000; // min time between route calls
+
+/* ====== State ====== */
+let speedZones = [];
+let currentZone = null;
+let zoneStartTime = null;
+let zoneDistanceTravelled = 0; // meters
+let lastGPS = null;
+let watchId = null;
+let wakeLock = null;
+let lastOSRMCall = 0;
+let routeCache = {}; // cache route distances for start->end keys
+
+/* ====== Example local zones (you can replace / load via API) ====== */
+const exampleZones = [
+  {
+    id: 'zone-1',
+    name: 'M4 Motorway — Zone 1',
+    speedLimit: 90,
+    startCam: { lat: -33.8601, lon: 151.2040 },
+    endCam:   { lat: -33.8405, lon: 151.2310 }
+  },
+  {
+    id: 'zone-2',
+    name: 'M5 Tunnel — Zone 2',
+    speedLimit: 80,
+    startCam: { lat: -33.9402, lon: 151.0502 },
+    endCam:   { lat: -33.9551, lon: 151.0877 }
+  }
+];
+
+/* ====== Helpers: route distance via OSRM ====== */
+function getRouteCacheKey(fromLat,fromLon,toLat,toLon){
+  return `${fromLat.toFixed(5)},${fromLon.toFixed(5)}->${toLat.toFixed(5)},${toLon.toFixed(5)}`;
+}
+
+async function fetchRouteDistance(fromLat,fromLon,toLat,toLon){
+  // Use cache if available and recent
+  const key = getRouteCacheKey(fromLat,fromLon,toLat,toLon);
+  if(routeCache[key] && (Date.now() - routeCache[key].ts) < 60000) return routeCache[key].distance; // cached for 60s
+
+  const now = Date.now();
+  if(now - lastOSRMCall < OSRM_ROUTE_THROTTLE_MS){
+    // too soon; return cached if exists, otherwise fallback to straight-line
+    if(routeCache[key]) return routeCache[key].distance;
+    return haversine(fromLat,fromLon,toLat,toLon);
+  }
+
+  lastOSRMCall = now;
+  const coords = `${fromLon},${fromLat};${toLon},${toLat}`;
+  const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=false&geometries=polyline&annotations=distance`;
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('OSRM error: '+r.status);
+    const data = await r.json();
+    if(data && data.routes && data.routes.length){
+      const dist = data.routes[0].distance; // meters
+      routeCache[key] = { distance: dist, ts: Date.now() };
+      return dist;
+    }
+    // fallback to haversine
+    return haversine(fromLat,fromLon,toLat,toLon);
+  }catch(e){
+    console.warn('OSRM fetch failed',e);
+    if(routeCache[key]) return routeCache[key].distance;
+    return haversine(fromLat,fromLon,toLat,toLon);
+  }
+}
+
+/* ====== Load Zones (local or remote) ====== */
+async function loadZonesFromUrl(url){
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('Failed to load');
+    const data = await r.json();
+    speedZones = data;
+    setStatus(`Loaded ${speedZones.length} zones from URL`);
+  }catch(e){
+    setStatus('Load failed: ' + e.message);
+  }
+}
+
+function loadExampleZones(){ speedZones = exampleZones; setStatus('Loaded example zones'); }
+
+/* ====== Zone detection ====== */
+function detectZoneEntry(lat,lon){
+  for(const z of speedZones){
+    const d = haversine(lat,lon,z.startCam.lat,z.startCam.lon);
+    if(d < 50) return z; // within 50m of start camera
+  }
+  return null;
+}
+
+/* ====== Wake lock helper ====== */
+async function requestWakeLock(){ try{ if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); console.log('wakeLock active') } }catch(e){ console.warn('Wake lock failed',e) } }
+
+/* ====== UI actions ====== */
+document.getElementById('loadZones').onclick = async ()=>{
+  const url = document.getElementById('zonesUrl').value.trim();
+  if(!url){ loadExampleZones(); return; }
+  await loadZonesFromUrl(url);
+}
+
+document.getElementById('setStart').onclick = ()=>{
+  navigator.geolocation.getCurrentPosition(p=>{ lastGPS = { lat:p.coords.latitude, lon:p.coords.longitude }; setStatus('Start point set from GPS') }, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true })
+}
+
+document.getElementById('begin').onclick = async ()=>{
+  if(!speedZones.length) loadExampleZones();
+  await requestWakeLock();
+  setStatus('Starting tracking...');
+  watchId = navigator.geolocation.watchPosition(updatePosition, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true, maximumAge:1000, timeout:10000 });
+}
+
+document.getElementById('stop').onclick = ()=>{
+  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null }
+  if(wakeLock){ try{ wakeLock.release(); wakeLock=null }catch(e){} }
+  currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null;
+  setStatus('Stopped'); document.getElementById('zoneName').textContent='';
+}
+
+/* ====== Main GPS update ====== */
+async function updatePosition(pos){
+  const lat = pos.coords.latitude; const lon = pos.coords.longitude; const acc = pos.coords.accuracy;
+  if(acc > 50){ setStatus('Poor accuracy: '+acc.toFixed(0)+'m'); return; }
+
+  // Distance segment
+  if(lastGPS){
+    const seg = haversine(lastGPS.lat,lastGPS.lon,lat,lon);
+    if(seg >= 3){ if(currentZone) zoneDistanceTravelled += seg; }
+  }
+  lastGPS = { lat, lon };
+
+  // Current speed
+  const speedMs = (pos.coords.speed !== null && pos.coords.speed >=0) ? pos.coords.speed : 0;
+  const curKmh = speedMs * 3.6;
+  document.getElementById('curSpeed').textContent = curKmh.toFixed(1) + ' km/h';
+
+  // Zone entry detection
+  if(!currentZone){
+    const zone = detectZoneEntry(lat,lon);
+    if(zone){
+      currentZone = zone; zoneStartTime = Date.now(); zoneDistanceTravelled = 0; setStatus('Entered zone: '+zone.name); document.getElementById('zoneName').textContent = zone.name + ' — limit ' + zone.speedLimit + ' km/h';
+    }
+  }
+
+  // If in a zone, compute OSRM route distance to end camera (throttled)
+  if(currentZone){
+    // Compute avg so far (time-based)
+    const elapsedHours = Math.max(1e-6,(Date.now() - zoneStartTime)/3600000);
+    const avgKmh = (zoneDistanceTravelled/1000) / elapsedHours;
+    document.getElementById('avgSpeed').textContent = avgKmh>0? avgKmh.toFixed(1)+' km/h' : '--';
+    document.getElementById('distTrav').textContent = (zoneDistanceTravelled/1000).toFixed(3) + ' km';
+
+    // Determine remaining distance using OSRM
+    let remaining = haversine(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon); // fallback
+    try{
+      const routeDist = await fetchRouteDistance(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon);
+      remaining = routeDist;
+    }catch(e){ console.warn('Route fetch error',e) }
+
+    document.getElementById('distLeft').textContent = (remaining/1000).toFixed(3) + ' km';
+
+    // Required average calculation
+    const travelledKm = zoneDistanceTravelled/1000;
+    const remainingKm = Math.max(0.000001, remaining/1000);
+    const totalKm = travelledKm + remainingKm;
+    const limit = currentZone.speedLimit;
+    const numerator = (limit * totalKm) - (avgKmh * travelledKm);
+    let requiredAvg = 0;
+    if(numerator > 0){ requiredAvg = numerator / remainingKm; requiredAvg = Math.min(requiredAvg, limit); }
+    document.getElementById('reqSpeed').textContent = requiredAvg>0? requiredAvg.toFixed(1) + ' km/h' : '--';
+    updateGauge(requiredAvg, limit);
+
+    // If very close to end camera (within 15 m) consider zone complete
+    if(remaining < 15){
+      const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000);
+      const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours;
+      alert(`Zone finished: ${currentZone.name}
+Average speed: ${finalAvg.toFixed(1)} km/h
+Limit: ${currentZone.speedLimit} km/h`);
+      // clear zone state
+      currentZone = null; zoneStartTime = null; zoneDistanceTravelled = 0; document.getElementById('zoneName').textContent='';
+      document.getElementById('avgSpeed').textContent='--'; document.getElementById('distTrav').textContent='--'; document.getElementById('distLeft').textContent='--'; document.getElementById('reqSpeed').textContent='--'; updateGauge(0,150);
+    }
+  }
+}
+
+/* ====== On load: show example zones by default ====== */
+loadExampleZones();
+</script>
+
+<!--
+  Notes & deployment tips:
+
+  • OSRM backend: this file uses the public router.project-osrm.org endpoint. That service is shared and has rate limits; for reliable production behavior you should host your own OSRM instance or use a paid routing API.
+
+  • Throttling: the client throttles OSRM calls to once every 10s and caches results per coordinate pair for 60s to avoid excessive requests.
+
+  • Edge cases: if routing fails the code falls back to straight-line distance (Haversine). That may underestimate road distance in areas with complex road networks.
+
+  • Map & visualization: you can easily add a small Leaflet map to show start/end cameras and live position. Let me know if you want that included.
+
+  • Server: you can serve this single HTML file from any static host (GitHub Pages, Netlify, nginx).
+-->
+
+</body>
+</html>
