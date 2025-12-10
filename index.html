@@ -270,35 +270,41 @@ loadExampleZones();
 -->
 
 <!-- F1 Canvas Gauge -->
-<canvas id="f1Gauge" width="300" height="180" style="display:block;margin:20px auto;"></canvas>
+<canvas id="f1Gauge" width="340" height="200" style="display:block;margin:20px auto 10px auto;"></canvas>
 <script>
-// === F1 GAUGE IMPLEMENTATION ===
+// Simple F1‑style gauge: clean arcs + needle + avg readout
 const f1 = document.getElementById('f1Gauge');
 const ctx = f1.getContext('2d');
-let lastAvg = 0;
 
-function drawF1Gauge(avg, limit){
+function drawF1(avg, limit){
   const w = f1.width, h = f1.height;
   ctx.clearRect(0,0,w,h);
-  const cx = w/2, cy = h*0.95;
-  const r = h*0.9;
 
-  // segments (green -> yellow -> red)
-  const start = Math.PI;      // left
-  const mid = Math.PI*1.5;    // top
-  const end = 0;              // right
+  const cx = w/2;
+  const cy = h*1.05;     // pushes arcs up slightly
+  const r  = h*1.05;
+
+  // arc sections
+  ctx.lineWidth = 26;
+  ctx.lineCap = 'round';
 
   // green
-  ctx.beginPath(); ctx.strokeStyle = '#00ff66'; ctx.lineWidth = 22;
-  ctx.arc(cx,cy,r,start,mid,false); ctx.stroke();
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff66';
+  ctx.arc(cx, cy, r, Math.PI, Math.PI*1.45);
+  ctx.stroke();
 
   // yellow
-  ctx.beginPath(); ctx.strokeStyle = '#ffe066';
-  ctx.arc(cx,cy,r,mid,Math.PI*1.7,false); ctx.stroke();
+  ctx.beginPath();
+  ctx.strokeStyle = '#ffe066';
+  ctx.arc(cx, cy, r, Math.PI*1.45, Math.PI*1.7);
+  ctx.stroke();
 
   // red
-  ctx.beginPath(); ctx.strokeStyle = '#ff3b3b';
-  ctx.arc(cx,cy,r,Math.PI*1.7,end,false); ctx.stroke();
+  ctx.beginPath();
+  ctx.strokeStyle = '#ff3b3b';
+  ctx.arc(cx, cy, r, Math.PI*1.7, 0);
+  ctx.stroke();
 
   // needle
   const pct = Math.min(1, avg/limit);
@@ -306,23 +312,32 @@ function drawF1Gauge(avg, limit){
   const nx = cx + Math.cos(ang)*r*0.9;
   const ny = cy + Math.sin(ang)*r*0.9;
 
-  ctx.beginPath(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
-  ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.stroke();
+  ctx.beginPath();
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4;
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(nx, ny);
+  ctx.stroke();
 
-  // text
-  ctx.fillStyle = '#ffffff'; ctx.font = '26px sans-serif'; ctx.textAlign='center';
-  ctx.fillText(avg.toFixed(0)+' km/h', cx, cy-30);
+  // avg text
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.font = '28px system-ui, sans-serif';
+  ctx.fillText(avg.toFixed(0) + ' km/h', cx, h*0.55);
+  ctx.font = '14px system-ui, sans-serif';
+  ctx.fillText('AVG SPEED', cx, h*0.75);
 }
 
-// Hook average speed updates
-const oldAvgSetter = document.getElementById('avgSpeed');
-const observer = new MutationObserver(()=>{
-  const txt = oldAvgSetter.textContent.split(' ')[0];
-  const v = parseFloat(txt);
-  if(!isNaN(v)) drawF1Gauge(v, currentZone? currentZone.speedLimit:150);
-});
-observer.observe(oldAvgSetter,{childList:true});
+// observe avgSpeed element
+const avgNode = document.getElementById('avgSpeed');
+new MutationObserver(() => {
+  const raw = avgNode.textContent.trim().split(' ')[0];
+  const v = parseFloat(raw);
+  if(!isNaN(v)){
+    const limit = (window.currentZone ? window.currentZone.speedLimit : 150);
+    drawF1(v, limit);
+  }
+}).observe(avgNode, { childList: true });
 </script>
 </body>
 </html>
-
