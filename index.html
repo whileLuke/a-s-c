@@ -1,10 +1,9 @@
 <!doctype html>
-
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Average Speed Tracker</title>
+<title>F1-style Average Speed Tracker — Camera Zones (OSRM)</title>
 <style>
 :root{
   --bg:#050507; --card:#0d0d10; --muted:#9aa0a6; --accent:#00d0ff; --glass:rgba(255,255,255,0.03);
@@ -76,41 +75,38 @@ footer{margin-top:12px;color:var(--muted);font-size:12px}
         <canvas id="f1Gauge" width="720" height="420" aria-label="Average speed gauge"></canvas>
         <div class="gauge-title">AVERAGE SPEED SO FAR</div>
 
-```
-    <div class="required-box" style="margin-top:12px">
-      <div class="required-label">REQUIRED SPEED FOR REST OF JOURNEY</div>
-      <div id="reqSpeed" class="required-value">-- km/h</div>
-      <div id="zoneName" class="zone-name" style="margin-top:6px">--</div>
-    </div>
-  </div>
-</div>
-
-<div class="right">
-  <div class="card small">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:13px;color:var(--muted)">Current Zone</div>
-        <div id="curZoneLabel" style="font-weight:700;margin-top:6px">--</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:13px;color:var(--muted)">Zone Limit</div>
-        <div id="curLimit" style="font-weight:700;margin-top:6px">-- km/h</div>
+        <div class="required-box" style="margin-top:12px">
+          <div class="required-label">REQUIRED SPEED FOR REST OF JOURNEY</div>
+          <div id="reqSpeed" class="required-value">-- km/h</div>
+          <div id="zoneName" class="zone-name" style="margin-top:6px">--</div>
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="card small">
-    <div style="font-size:13px;color:var(--muted)">Distance Traveled (in-zone)</div>
-    <div id="distTrav" style="font-weight:700;margin-top:8px">-- km</div>
-  </div>
+    <div class="right">
+      <div class="card small">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:13px;color:var(--muted)">Current Zone</div>
+            <div id="curZoneLabel" style="font-weight:700;margin-top:6px">--</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;color:var(--muted)">Zone Limit</div>
+            <div id="curLimit" style="font-weight:700;margin-top:6px">-- km/h</div>
+          </div>
+        </div>
+      </div>
 
-  <div class="card small">
-    <div style="font-size:13px;color:var(--muted)">Notes</div>
-    <div style="margin-top:8px;color:var(--muted);font-size:13px">This single-file version uses OSRM to compute road distance (see code for OSRM_BASE). If routing fails it falls back to straight-line distance.</div>
-  </div>
-</div>
-```
+      <div class="card small">
+        <div style="font-size:13px;color:var(--muted)">Distance Traveled (in-zone)</div>
+        <div id="distTrav" style="font-weight:700;margin-top:8px">-- km</div>
+      </div>
 
+      <div class="card small">
+        <div style="font-size:13px;color:var(--muted)">Notes</div>
+        <div style="margin-top:8px;color:var(--muted);font-size:13px">This single-file version uses OSRM to compute road distance (see code for OSRM_BASE). If routing fails it falls back to straight-line distance.</div>
+      </div>
+    </div>
   </div>
 
   <footer>Tip: Host this file on any static host. Want a small map added? Say the word.</footer>
@@ -175,7 +171,18 @@ document.getElementById('setStart').onclick = ()=>{ navigator.geolocation.getCur
 
 document.getElementById('begin').onclick = async ()=>{ if(!speedZones.length) loadExampleZones(); setStatus('Starting tracking...'); watchId = navigator.geolocation.watchPosition(updatePosition, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true, maximumAge:1000, timeout:10000 }); }
 
-document.getElementById('stop').onclick = ()=>{ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null } currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null; setStatus('Stopped'); document.getElementById('zoneName').textContent='--'; document.getElementById('curZoneLabel').textContent='--'; document.getElementById('curLimit').textContent='-- km/h'; document.getElementById('avgSpeed').textContent='-- km/h'; document.getElementById('distTrav').textContent='-- km'; document.getElementById('distLeft').textContent='-- km'; document.getElementById('reqSpeed').textContent='-- km/h'; drawF1(0,0,150);
+document.getElementById('stop').onclick = ()=>{ 
+  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null } 
+  currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null; 
+  setStatus('Stopped'); 
+  document.getElementById('zoneName').textContent='--'; 
+  document.getElementById('curZoneLabel').textContent='--'; 
+  document.getElementById('curLimit').textContent='-- km/h'; 
+  document.getElementById('avgSpeed').textContent='-- km/h'; 
+  document.getElementById('distTrav').textContent='-- km'; 
+  document.getElementById('distLeft').textContent='-- km'; 
+  document.getElementById('reqSpeed').textContent='-- km/h'; 
+  drawF1(0,150);
 }
 
 /* ===== Main GPS update ===== */
@@ -184,12 +191,20 @@ async function updatePosition(pos){
   if(acc > 50){ setStatus('Poor GPS accuracy: '+acc.toFixed(0)+'m'); return }
 
   // distance segment
-  if(lastGPS){ const seg = haversine(lastGPS.lat,lastGPS.lon,lat,lon); if(seg >= 3){ if(currentZone) zoneDistanceTravelled += seg } }
+  let seg = 0;
+  if(lastGPS){ 
+    seg = haversine(lastGPS.lat,lastGPS.lon,lat,lon); 
+    if(seg >= 3){ if(currentZone) zoneDistanceTravelled += seg } 
+  }
   lastGPS = {lat,lon};
 
   // current speed
-  const speedMs = (pos.coords.speed !== null && pos.coords.speed >= 0) ? pos.coords.speed : 0;
-  const curKmh = speedMs * 3.6;
+  let curKmh = (pos.coords.speed !== null && pos.coords.speed >= 0) ? pos.coords.speed*3.6 : 0;
+  // if GPS speed unavailable, fallback to distance/time
+  if(pos.coords.speed===null && lastGPS && zoneStartTime){
+    const elapsedSec = (Date.now() - zoneStartTime)/1000;
+    curKmh = (zoneDistanceTravelled/1000)/(elapsedSec/3600);
+  }
   document.getElementById('curSpeed').textContent = curKmh.toFixed(1) + ' km/h';
 
   // zone entry
@@ -198,7 +213,7 @@ async function updatePosition(pos){
   if(currentZone){
     const elapsedHours = Math.max(1e-6, (Date.now() - zoneStartTime)/3600000);
     const avgKmh = (zoneDistanceTravelled/1000) / elapsedHours;
-    document.getElementById('avgSpeed').textContent = avgKmh>0? avgKmh.toFixed(1)+' km/h' : '-- km/h';
+    document.getElementById('avgSpeed').textContent = avgKmh>0? avgKmh.toFixed(1)+' km/h' : '0 km/h';
     document.getElementById('distTrav').textContent = (zoneDistanceTravelled/1000).toFixed(3) + ' km';
 
     // remaining distance
@@ -216,11 +231,24 @@ async function updatePosition(pos){
     if(numerator > 0){ requiredAvg = numerator / remainingKm; requiredAvg = Math.min(requiredAvg, 300); }
     document.getElementById('reqSpeed').textContent = requiredAvg > 0 ? requiredAvg.toFixed(1) + ' km/h' : '-- km/h';
 
-    // update gauge with avg (gauge shows average only)
-    drawF1(curKmh, avgKmh, limit);
+    // update gauge with avg
+    drawF1(avgKmh, limit);
 
     // zone finish
-    if(remaining < 15){ const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000); const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours; alert(`Zone finished: ${currentZone.name}\nAverage speed: ${finalAvg.toFixed(1)} km/h\nLimit: ${currentZone.speedLimit} km/h`); currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; document.getElementById('zoneName').textContent='--'; document.getElementById('curZoneLabel').textContent='--'; document.getElementById('curLimit').textContent='-- km/h'; document.getElementById('avgSpeed').textContent='-- km/h'; document.getElementById('distTrav').textContent='-- km'; document.getElementById('distLeft').textContent='-- km'; document.getElementById('reqSpeed').textContent='-- km/h'; drawF1(0,150); }
+    if(remaining < 15){ 
+      const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000); 
+      const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours; 
+      alert(`Zone finished: ${currentZone.name}\nAverage speed: ${finalAvg.toFixed(1)} km/h\nLimit: ${currentZone.speedLimit} km/h`); 
+      currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; 
+      document.getElementById('zoneName').textContent='--'; 
+      document.getElementById('curZoneLabel').textContent='--'; 
+      document.getElementById('curLimit').textContent='-- km/h'; 
+      document.getElementById('avgSpeed').textContent='0 km/h'; 
+      document.getElementById('distTrav').textContent='-- km'; 
+      document.getElementById('distLeft').textContent='-- km'; 
+      document.getElementById('reqSpeed').textContent='-- km/h'; 
+      drawF1(0,150); 
+    }
   }
 }
 
@@ -230,75 +258,63 @@ loadExampleZones();
 /* ===== F1-style gauge rendering ===== */
 const f1 = document.getElementById('f1Gauge');
 const ctx = f1.getContext('2d');
-function drawF1(currentSpeed, avgSpeed, limit){
-  // Responsive canvas sizing and DPI
+function drawF1(avg, limit){
   const dpr = window.devicePixelRatio || 1;
-  const W = f1.clientWidth;
-  const H = Math.max(120, Math.round(W * 0.6));
-  f1.width = Math.round(W * dpr);
-  f1.height = Math.round(H * dpr);
+  const W = f1.clientWidth; const H = Math.round(W*0.55);
+  f1.width = Math.round(W*dpr); f1.height = Math.round(H*dpr);
   f1.style.height = H + 'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,W,H);
 
-  // layout: keep circle fully inside canvas (avoid clipping)
-  const cx = W/2;
-  const cy = H * 0.95; // push center slightly above bottom
-  const r = Math.min(W*0.45, H*0.95);
+  const cx = W/2; const cy = H*1.05; const r = H*1.05;
 
-  // determine color based on CURRENT speed vs limit
-  const safeLimit = Math.max(1, limit || 1);
-  const pct = Math.min(1, Math.max(0, (currentSpeed / safeLimit)));
-  let color = '#00ff66';
-  if(pct > 0.9) color = '#ff3b3b';
-  else if(pct > 0.7) color = '#ffe066';
-
-  // neon glow arc
-  ctx.lineWidth = Math.max(12, Math.round(H * 0.08));
+  ctx.lineWidth = Math.max(12, Math.round(H*0.08));
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.shadowBlur = 30; ctx.shadowColor = color;
-  ctx.strokeStyle = color;
-  ctx.arc(cx, cy, r, Math.PI, 2*Math.PI, false);
-  ctx.stroke();
-  ctx.shadowBlur = 0;
 
-  // subtle outline for contrast
+  const segGreen = 0.6; 
+  const segYellow = 0.85; 
+  const segRed = 1.0; 
+
+  function arc(fromPct, toPct, color){
+    const a1 = Math.PI + Math.PI*fromPct;
+    const a2 = Math.PI + Math.PI*toPct;
+    ctx.beginPath(); ctx.strokeStyle = color; ctx.arc(cx,cy,r,a1,a2); ctx.stroke();
+  }
+
+  arc(0, segGreen, '#00ff66');
+  arc(segGreen, segYellow, '#ffe066');
+  arc(segYellow, segRed, '#ff3b3b');
+
   ctx.beginPath(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.arc(cx,cy,r,Math.PI,2*Math.PI); ctx.stroke();
 
-  // needle based on CURRENT speed
+  const safeLimit = Math.max(1, limit);
+  const pct = Math.min(1, Math.max(0, (avg / safeLimit)));
   const angle = Math.PI + (Math.PI * pct);
-  const nx = cx + Math.cos(angle) * (r * 0.88);
-  const ny = cy + Math.sin(angle) * (r * 0.88);
+  const nx = cx + Math.cos(angle) * (r*0.88);
+  const ny = cy + Math.sin(angle) * (r*0.88);
 
-  // needle shadow/hub
   ctx.beginPath(); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.arc(cx,cy,10,0,2*Math.PI); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.lineWidth = Math.max(3, Math.round(H*0.02)); ctx.strokeStyle = color; ctx.stroke();
+
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.lineWidth = Math.max(3, Math.round(H*0.02)); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+
   ctx.beginPath(); ctx.fillStyle = '#ffffff'; ctx.arc(cx,cy,5,0,2*Math.PI); ctx.fill();
 
-  // Average number in center (gauge shows average)
-  const avgDisplay = (isFinite(avgSpeed) && avgSpeed>0) ? Math.round(avgSpeed) : 0;
   ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = `700 ${Math.round(H*0.22)}px Inter, system-ui, sans-serif`;
+  const avgDisplay = isFinite(avg) && avg>0 ? Math.round(avg) : 0;
   ctx.fillText(`${avgDisplay}`, cx, H*0.55);
 
-  // small "km/h"
   ctx.font = `14px Inter, system-ui, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('km/h', cx, H*0.73);
 
-  // small labels
   ctx.font = '12px Inter, system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillText(`Limit ${limit} km/h`, cx, H*0.95);
 }
 
-// initial draw
 window.addEventListener('load', ()=> drawF1(0,150) );
-window.addEventListener('resize', ()=>{ // redraw to keep proportions
-  // read current speeds from UI
-  const curRaw = document.getElementById('curSpeed').textContent.trim().split(' ')[0]; const cur = parseFloat(curRaw);
-  const avgRaw = document.getElementById('avgSpeed').textContent.trim().split(' ')[0]; const avg = parseFloat(avgRaw);
-  const limit = (currentZone ? currentZone.speedLimit : 150);
-  drawF1(isNaN(cur)?0:cur, isNaN(avg)?0:avg, limit);
-});;
-
+window.addEventListener('resize', ()=>{ 
+  const raw = document.getElementById('avgSpeed').textContent.trim().split(' ')[0]; 
+  const v = parseFloat(raw); 
+  const limit = (currentZone ? currentZone.speedLimit : 150); 
+  drawF1(isNaN(v)?0:v, limit);
+});
 </script>
-
 </body>
 </html>
