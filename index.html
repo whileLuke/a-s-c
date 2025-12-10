@@ -2,272 +2,394 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Average Speed Tracker — Camera Zones (OSRM)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Average Speed Tracker — F1 Dial + OSRM + Geocode</title>
 <style>
-:root{--bg:#000;--card:#111;--accent:#0af;--text:#fff;--subtle:#999;--radius:18px}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}
-.container{padding:16px;max-width:740px;margin:auto;padding-bottom:env(safe-area-inset-bottom)}
-.card{background:var(--card);padding:18px;border-radius:var(--radius);margin-bottom:18px}
-input,button{width:100%;padding:12px;border-radius:12px;border:1px solid #222;background:#000;color:#fff;box-sizing:border-box}
-.stats{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.stat{background:var(--card);padding:18px;border-radius:var(--radius);text-align:center}
-.gauge{width:200px;height:100px;background:#1a1a1a;border-radius:200px 200px 0 0;margin:0 auto;position:relative;overflow:hidden;border:3px solid #222}
-.needle{width:4px;height:90px;background:var(--accent);position:absolute;bottom:0;left:50%;transform-origin:bottom center;transform:rotate(-90deg);border-radius:2px;transition:transform .25s}
-.install-prompt{display:none}
+:root{
+  --bg:#050509;
+  --card:#0f1113;
+  --accent:#00e6ff;
+  --accent-2:#ff3b3b;
+  --text:#e6f7ff;
+  --subtle:#99a0a6;
+  --muted:#222;
+  --radius:14px;
+}
+
+/* Page layout */
+body{margin:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial; background:linear-gradient(180deg,#010103 0%, #061019 100%); color:var(--text); -webkit-font-smoothing:antialiased}
+.container{max-width:780px;margin:20px auto;padding:16px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:var(--radius); padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); margin-bottom:16px; border:1px solid rgba(255,255,255,0.03)}
+
+/* Buttons + inputs */
+input, button, textarea{font-family:inherit}
+input{width:100%; padding:12px; border-radius:10px; background:#071018; border:1px solid #12151a; color:var(--text); box-sizing:border-box}
+button{padding:10px 14px; border-radius:10px; border:none; background:linear-gradient(90deg,var(--accent), #8df0ff); color:#021018; font-weight:700; cursor:pointer}
 .small{font-size:13px;color:var(--subtle)}
+
+/* F1 dial container */
+.dial-wrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.dial{
+  width:320px;
+  height:180px;
+  position:relative;
+  margin:0 auto;
+  --dial-bg:linear-gradient(180deg, #071017, #000);
+  background:var(--dial-bg);
+  border-radius:160px 160px 12px 12px;
+  box-shadow: inset 0 -12px 30px rgba(0,0,0,0.6), 0 8px 30px rgba(0,0,0,0.5);
+  border:1px solid rgba(255,255,255,0.02);
+  overflow:hidden;
+}
+
+/* semicircle canvas for ticks */
+.dial-canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+
+/* needle */
+.needle{
+  position:absolute;
+  left:50%;
+  bottom:12px;
+  width:4px;
+  height:86%;
+  transform-origin:bottom center;
+  transform:rotate(-90deg);
+  border-radius:4px;
+  background: linear-gradient(180deg,var(--accent), rgba(255,255,255,0.06));
+  box-shadow:0 2px 8px rgba(0,0,0,0.8), 0 0 18px rgba(0,230,255,0.08);
+  transition: transform 260ms cubic-bezier(.2,.9,.2,1);
+  z-index:6;
+}
+
+/* needle hub */
+.hub{
+  position:absolute;
+  left:50%;
+  bottom:10px;
+  width:22px;
+  height:22px;
+  margin-left:-11px;
+  background: radial-gradient(circle at 40% 30%, #fff3, #0000 30%), linear-gradient(180deg,#111,#000);
+  border-radius:50%;
+  border: 2px solid rgba(255,255,255,0.06);
+  z-index:8;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.8);
+}
+
+/* central digital readout */
+.readout{
+  position:absolute;
+  left:50%;
+  bottom:26px;
+  transform:translateX(-50%);
+  z-index:8;
+  font-weight:800;
+  font-size:28px;
+  letter-spacing:0.6px;
+  color:var(--text);
+  text-align:center;
+  padding:6px 12px;
+  border-radius:10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.02);
+}
+
+/* small subtitle */
+.readout-sub{font-size:12px;color:var(--subtle);font-weight:600;margin-top:4px}
+
+/* left panel with stats */
+.stats{flex:1;min-width:220px}
+.stat{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00)); padding:12px; border-radius:10px; margin-bottom:8px; border:1px solid rgba(255,255,255,0.02)}
+.stat h4{margin:0;font-size:13px;color:var(--subtle);font-weight:700}
+.stat .val{font-size:20px;margin-top:8px;font-weight:800}
+
+/* small ticks legend */
+.legend{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:8px}
+.legend .box{width:18px;height:10px;border-radius:4px}
+.band-safe{background:linear-gradient(90deg,#08d300,#6be85b)}
+.band-warning{background:linear-gradient(90deg,#ffd000,#ffb74d)}
+.band-danger{background:linear-gradient(90deg,#ff6b6b,#ff3b3b)}
+
+/* subtle footer */
+.footer{font-size:12px;color:var(--subtle);text-align:center;margin-top:8px}
 </style>
 </head>
 <body>
 <div class="container">
-  <h1>Average Speed Tracker — Camera Zones (OSRM)</h1>
+  <div class="card">
+    <h2 style="margin:0 0 8px 0">Average Speed Tracker — F1 Dial</h2>
+    <div class="small">Drop-in single-file. Dial is decorative + driven from the 'Required Average' value your tracker computes.</div>
+  </div>
+
+  <div class="card dial-wrap">
+    <div class="dial" id="dial">
+      <canvas class="dial-canvas" id="dialCanvas" width="640" height="360"></canvas>
+      <div class="needle" id="needle"></div>
+      <div class="hub"></div>
+      <div class="readout" id="readout">--<div class="readout-sub" id="readoutSub">REQ AVG</div></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><h4>Current Speed</h4><div class="val" id="curSpeed">-- km/h</div></div>
+      <div class="stat"><h4>Average (zone)</h4><div class="val" id="avgSpeed">-- km/h</div></div>
+      <div class="stat"><h4>Distance left</h4><div class="val" id="distLeft">-- km</div></div>
+      <div class="stat"><h4>Zone</h4><div class="val" id="zoneName">--</div></div>
+    </div>
+  </div>
 
   <div class="card">
-    <label>Camera Zones Source (optional URL)</label>
-    <input id="zonesUrl" type="text" placeholder="/api/zones or https://example.com/zones.json" />
-    <button id="loadZones">Load Zones</button>
-    <div style="height:12px"></div>
-    <button id="setStart">Use My Location as Start</button>
-    <button id="begin">Start Tracking</button>
-    <button id="stop">Stop Tracking</button>
-    <div style="height:8px"></div>
-    <div class="small">This single-file version uses OSRM (router.project-osrm.org) to compute road distance to the end camera. If you host your own OSRM server, update <code>OSRM_BASE</code>.</div>
-  </div>
-
-  <div class="stats">
-    <div class="stat"><div>Current Speed</div><div id="curSpeed" class="stat-value">--</div></div>
-    <div class="stat"><div>Average So Far</div><div id="avgSpeed" class="stat-value">--</div></div>
-  </div>
-
-  <div class="stats" style="margin-top:14px">
-    <div class="stat"><div>Distance Travelled (zone)</div><div id="distTrav" class="stat-value">--</div></div>
-    <div class="stat"><div>Distance Left</div><div id="distLeft" class="stat-value">--</div></div>
-  </div>
-
-  <div class="card" style="text-align:center;margin-top:18px">
-    <div>Required Average Speed</div>
-    <div class="gauge"><div id="needle" class="needle"></div></div>
-    <div id="reqSpeed" class="gauge-value">--</div>
-    <div id="zoneName" style="margin-top:8px;color:var(--subtle)"></div>
+    <label>Zones JSON URL (optional)</label>
+    <input id="zonesUrl" placeholder="/api/zones.json or paste JSON" />
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="loadJson">Load Zones</button>
+      <button id="loadExample">Load Example</button>
+      <button id="geocodeAll" style="background:#222;color:var(--text)">Geocode endpoints (Nominatim)</button>
+    </div>
+    <div class="small" style="margin-top:8px">The <b>Geocode</b> helper will attempt to resolve textual endpoints like "Harwood NSW" to coordinates (best-effort).</div>
   </div>
 
   <div class="card" id="status">Ready</div>
+  <div class="footer">Tip: For production, host your own geocoder and routing instance (Nominatim/OSRM).</div>
 </div>
 
 <script>
-/* ====== Utilities ====== */
-function toRad(d){return d*Math.PI/180}
-function haversine(lat1,lon1,lat2,lon2){const R=6371e3;const dLat=toRad(lat2-lat1);const dLon=toRad(lon2-lon1);const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
-function setStatus(t){document.getElementById('status').textContent=t}
-function updateGauge(speed,limit){const max=limit||150;const clamped=Math.min(max,Math.max(0,speed));const pct=clamped/max;const angle=-90+(180*pct);document.getElementById('needle').style.transform=`rotate(${angle}deg)`}
+/* =========================
+   Dial drawing + F1 look
+   ========================= */
+const canvas = document.getElementById('dialCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const centerX = W/2, centerY = H;
+const radius = Math.min(W*0.44, H*0.92);
+const startAngle = Math.PI;       // -90 deg = leftmost, but use PI -> left bottom
+const endAngle = 0;               // rightmost
+const ticksMajor = 10;
+const ticksMinor = 50; // finer ticks for aesthetics
 
-/* ====== OSRM Configuration ====== */
-const OSRM_BASE = 'https://router.project-osrm.org'; // change to your OSRM server if needed
-const OSRM_ROUTE_THROTTLE_MS = 10000; // min time between route calls
+function drawDial(maxSpeed=150){
+  ctx.clearRect(0,0,W,H);
+  // background semicircle
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#071017'); grad.addColorStop(1,'#000000');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(centerX, centerY, radius+28, radius+28, 0, Math.PI, 0);
+  ctx.fill();
 
-/* ====== State ====== */
-let speedZones = [];
+  // colored bands (safe/warn/danger) - drawn as arcs
+  const bands = [
+    {to:0.6, class:'band-safe'},
+    {to:0.85, class:'band-warning'},
+    {to:1.0, class:'band-danger'}
+  ];
+  let last = startAngle;
+  for(const b of bands){
+    const a = startAngle + (endAngle - startAngle) * b.to;
+    // convert to pixel arc
+    ctx.beginPath();
+    ctx.lineWidth = 16;
+    // radial stroke
+    ctx.strokeStyle = b.class==='band-safe' ? '#0ff76a' : (b.class==='band-warning' ? '#ffd166' : '#ff6b6b');
+    ctx.arc(centerX, centerY, radius+6, last, a, false);
+    ctx.stroke();
+    last = a;
+  }
+
+  // ticks
+  for(let i=0;i<=ticksMinor;i++){
+    const t = i/ticksMinor;
+    const angle = startAngle + (endAngle - startAngle)*t;
+    const inner = radius - ((i%5===0)?22:12);
+    const outer = radius+4;
+    const ix = centerX + Math.cos(angle) * inner;
+    const iy = centerY + Math.sin(angle) * inner;
+    const ox = centerX + Math.cos(angle) * outer;
+    const oy = centerY + Math.sin(angle) * outer;
+    ctx.beginPath();
+    ctx.moveTo(ix,iy); ctx.lineTo(ox,oy);
+    ctx.lineWidth = (i%5===0)?3:1;
+    ctx.strokeStyle = 'rgba(255,255,255,' + ((i%5===0)?0.95:0.12) + ')';
+    ctx.stroke();
+
+    // major labels
+    if(i%5===0){
+      const labelT = i/(ticksMinor) * maxSpeed;
+      const labelAngle = angle;
+      const lx = centerX + Math.cos(labelAngle) * (inner - 30);
+      const ly = centerY + Math.sin(labelAngle) * (inner - 30) + 6;
+      ctx.fillStyle = '#cfeff6';
+      ctx.font = '16px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.round(labelT), lx, ly);
+    }
+  }
+
+  // center gradient highlight
+  const hg = ctx.createRadialGradient(centerX, centerY-40, 10, centerX, centerY, radius+20);
+  hg.addColorStop(0, 'rgba(255,255,255,0.03)');
+  hg.addColorStop(1, 'rgba(0,0,0,0.0)');
+  ctx.fillStyle = hg;
+  ctx.beginPath();
+  ctx.ellipse(centerX, centerY-20, radius+40, (radius*0.45), 0, Math.PI, 0);
+  ctx.fill();
+}
+drawDial(150);
+
+/* animate needle */
+const needle = document.getElementById('needle');
+const readout = document.getElementById('readout');
+const readoutSub = document.getElementById('readoutSub');
+
+function updateF1Dial(value, max=150){
+  // value: 0..max
+  const pct = Math.min(1, Math.max(0, value/max));
+  // angle range -90deg .. +90deg => -90 + 180*pct
+  const angleDeg = -90 + (180 * pct);
+  needle.style.transform = `rotate(${angleDeg}deg)`;
+  readout.textContent = (isFinite(value) && value>0) ? Math.round(value) : '--';
+  readoutSub.textContent = 'REQ AVG';
+}
+
+/* =========================
+   Zone / OSRM / Geocode logic
+   ========================= */
+
+const OSRM_BASE = 'https://router.project-osrm.org';
+let zones = [];
 let currentZone = null;
 let zoneStartTime = null;
-let zoneDistanceTravelled = 0; // meters
+let zoneDistance = 0;
 let lastGPS = null;
 let watchId = null;
-let wakeLock = null;
-let lastOSRMCall = 0;
-let routeCache = {}; // cache route distances for start->end keys
+let lastOSRM = 0;
+let routeCache = {};
 
-/* ====== Example local zones (you can replace / load via API) ====== */
+function setStatus(t){ document.getElementById('status').textContent = t; }
+function showZoneName(n){ document.getElementById('zoneName').textContent = n || '--'; }
+function showCurSpeed(s){ document.getElementById('curSpeed').textContent = (s>0? s.toFixed(1) : '--') + ' km/h' }
+function showAvgSpeed(s){ document.getElementById('avgSpeed').textContent = s>0 ? s.toFixed(1) + ' km/h' : '--' }
+function showDistLeft(km){ document.getElementById('distLeft').textContent = isFinite(km) ? km.toFixed(3) + ' km' : '--' }
+
 const exampleZones = [
-  {
-    id: 'zone-1',
-    name: 'M4 Motorway — Zone 1',
-    speedLimit: 90,
-    startCam: { lat: -33.8601, lon: 151.2040 },
-    endCam:   { lat: -33.8405, lon: 151.2310 }
-  },
-  {
-    id: 'zone-2',
-    name: 'M5 Tunnel — Zone 2',
-    speedLimit: 80,
-    startCam: { lat: -33.9402, lon: 151.0502 },
-    endCam:   { lat: -33.9551, lon: 151.0877 }
-  }
+  { id:'z1', name:'M1 Harwood–New Italy', speedLimit:90, startCam:{lat:-29.411, lon:153.355}, endCam:{lat:-29.369, lon:153.350} }
 ];
 
-/* ====== Helpers: route distance via OSRM ====== */
-function getRouteCacheKey(fromLat,fromLon,toLat,toLon){
-  return `${fromLat.toFixed(5)},${fromLon.toFixed(5)}->${toLat.toFixed(5)},${toLon.toFixed(5)}`;
-}
-
-async function fetchRouteDistance(fromLat,fromLon,toLat,toLon){
-  // Use cache if available and recent
-  const key = getRouteCacheKey(fromLat,fromLon,toLat,toLon);
-  if(routeCache[key] && (Date.now() - routeCache[key].ts) < 60000) return routeCache[key].distance; // cached for 60s
-
-  const now = Date.now();
-  if(now - lastOSRMCall < OSRM_ROUTE_THROTTLE_MS){
-    // too soon; return cached if exists, otherwise fallback to straight-line
-    if(routeCache[key]) return routeCache[key].distance;
-    return haversine(fromLat,fromLon,toLat,toLon);
-  }
-
-  lastOSRMCall = now;
-  const coords = `${fromLon},${fromLat};${toLon},${toLat}`;
-  const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=false&geometries=polyline&annotations=distance`;
+document.getElementById('loadExample').onclick = ()=>{ zones = exampleZones; setStatus('Loaded example zones'); }
+document.getElementById('loadJson').onclick = async ()=>{
+  const v = document.getElementById('zonesUrl').value.trim();
+  if(!v){ setStatus('Paste JSON or URL'); return; }
   try{
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('OSRM error: '+r.status);
-    const data = await r.json();
-    if(data && data.routes && data.routes.length){
-      const dist = data.routes[0].distance; // meters
-      routeCache[key] = { distance: dist, ts: Date.now() };
-      return dist;
+    if(v.startsWith('{') || v.startsWith('[')){
+      zones = JSON.parse(v);
+      setStatus('Loaded zones from pasted JSON');
+    } else {
+      const r = await fetch(v);
+      if(!r.ok) throw new Error('Failed to fetch');
+      zones = await r.json();
+      setStatus('Loaded zones from URL');
     }
-    // fallback to haversine
-    return haversine(fromLat,fromLon,toLat,toLon);
-  }catch(e){
-    console.warn('OSRM fetch failed',e);
-    if(routeCache[key]) return routeCache[key].distance;
-    return haversine(fromLat,fromLon,toLat,toLon);
-  }
-}
+  }catch(e){ setStatus('Load error: '+e.message) }
+};
 
-/* ====== Load Zones (local or remote) ====== */
-async function loadZonesFromUrl(url){
-  try{
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('Failed to load');
-    const data = await r.json();
-    speedZones = data;
-    setStatus(`Loaded ${speedZones.length} zones from URL`);
-  }catch(e){
-    setStatus('Load failed: ' + e.message);
-  }
-}
-
-function loadExampleZones(){ speedZones = exampleZones; setStatus('Loaded example zones'); }
-
-/* ====== Zone detection ====== */
-function detectZoneEntry(lat,lon){
-  for(const z of speedZones){
-    const d = haversine(lat,lon,z.startCam.lat,z.startCam.lon);
-    if(d < 50) return z; // within 50m of start camera
-  }
+/* Geocode helper (Nominatim) - best-effort */
+async function geocodePlace(q){
+  const enc = encodeURIComponent(q + ', NSW, Australia');
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${enc}&limit=1`;
+  const r = await fetch(url, { headers:{ 'User-Agent':'avg-speed-tracker/1.0 (you@example.com)' } });
+  if(!r.ok) throw new Error('Geocode failed: '+r.status);
+  const arr = await r.json();
+  if(arr && arr.length) return { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon), display:arr[0].display_name };
   return null;
 }
 
-/* ====== Wake lock helper ====== */
-async function requestWakeLock(){ try{ if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); console.log('wakeLock active') } }catch(e){ console.warn('Wake lock failed',e) } }
-
-/* ====== UI actions ====== */
-document.getElementById('loadZones').onclick = async ()=>{
-  const url = document.getElementById('zonesUrl').value.trim();
-  if(!url){ loadExampleZones(); return; }
-  await loadZonesFromUrl(url);
-}
-
-document.getElementById('setStart').onclick = ()=>{
-  navigator.geolocation.getCurrentPosition(p=>{ lastGPS = { lat:p.coords.latitude, lon:p.coords.longitude }; setStatus('Start point set from GPS') }, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true })
-}
-
-document.getElementById('begin').onclick = async ()=>{
-  if(!speedZones.length) loadExampleZones();
-  await requestWakeLock();
-  setStatus('Starting tracking...');
-  watchId = navigator.geolocation.watchPosition(updatePosition, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true, maximumAge:1000, timeout:10000 });
-}
-
-document.getElementById('stop').onclick = ()=>{
-  if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null }
-  if(wakeLock){ try{ wakeLock.release(); wakeLock=null }catch(e){} }
-  currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null;
-  setStatus('Stopped'); document.getElementById('zoneName').textContent='';
-}
-
-/* ====== Main GPS update ====== */
-async function updatePosition(pos){
-  const lat = pos.coords.latitude; const lon = pos.coords.longitude; const acc = pos.coords.accuracy;
-  if(acc > 50){ setStatus('Poor accuracy: '+acc.toFixed(0)+'m'); return; }
-
-  // Distance segment
-  if(lastGPS){
-    const seg = haversine(lastGPS.lat,lastGPS.lon,lat,lon);
-    if(seg >= 3){ if(currentZone) zoneDistanceTravelled += seg; }
-  }
-  lastGPS = { lat, lon };
-
-  // Current speed
-  const speedMs = (pos.coords.speed !== null && pos.coords.speed >=0) ? pos.coords.speed : 0;
-  const curKmh = speedMs * 3.6;
-  document.getElementById('curSpeed').textContent = curKmh.toFixed(1) + ' km/h';
-
-  // Zone entry detection
-  if(!currentZone){
-    const zone = detectZoneEntry(lat,lon);
-    if(zone){
-      currentZone = zone; zoneStartTime = Date.now(); zoneDistanceTravelled = 0; setStatus('Entered zone: '+zone.name); document.getElementById('zoneName').textContent = zone.name + ' — limit ' + zone.speedLimit + ' km/h';
-    }
-  }
-
-  // If in a zone, compute OSRM route distance to end camera (throttled)
-  if(currentZone){
-    // Compute avg so far (time-based)
-    const elapsedHours = Math.max(1e-6,(Date.now() - zoneStartTime)/3600000);
-    const avgKmh = (zoneDistanceTravelled/1000) / elapsedHours;
-    document.getElementById('avgSpeed').textContent = avgKmh>0? avgKmh.toFixed(1)+' km/h' : '--';
-    document.getElementById('distTrav').textContent = (zoneDistanceTravelled/1000).toFixed(3) + ' km';
-
-    // Determine remaining distance using OSRM
-    let remaining = haversine(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon); // fallback
+document.getElementById('geocodeAll').onclick = async ()=>{
+  if(!zones.length){ setStatus('No zones loaded to geocode'); return; }
+  setStatus('Geocoding endpoints (Nominatim) — please wait...');
+  for(let i=0;i<zones.length;i++){
+    const z = zones[i];
     try{
-      const routeDist = await fetchRouteDistance(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon);
-      remaining = routeDist;
-    }catch(e){ console.warn('Route fetch error',e) }
-
-    document.getElementById('distLeft').textContent = (remaining/1000).toFixed(3) + ' km';
-
-    // Required average calculation
-    const travelledKm = zoneDistanceTravelled/1000;
-    const remainingKm = Math.max(0.000001, remaining/1000);
-    const totalKm = travelledKm + remainingKm;
-    const limit = currentZone.speedLimit;
-    const numerator = (limit * totalKm) - (avgKmh * travelledKm);
-    let requiredAvg = 0;
-    if(numerator > 0){ requiredAvg = numerator / remainingKm; requiredAvg = Math.min(requiredAvg, limit); }
-    document.getElementById('reqSpeed').textContent = requiredAvg>0? requiredAvg.toFixed(1) + ' km/h' : '--';
-    updateGauge(requiredAvg, limit);
-
-    // If very close to end camera (within 15 m) consider zone complete
-    if(remaining < 15){
-      const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000);
-      const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours;
-      alert(`Zone finished: ${currentZone.name}
-Average speed: ${finalAvg.toFixed(1)} km/h
-Limit: ${currentZone.speedLimit} km/h`);
-      // clear zone state
-      currentZone = null; zoneStartTime = null; zoneDistanceTravelled = 0; document.getElementById('zoneName').textContent='';
-      document.getElementById('avgSpeed').textContent='--'; document.getElementById('distTrav').textContent='--'; document.getElementById('distLeft').textContent='--'; document.getElementById('reqSpeed').textContent='--'; updateGauge(0,150);
+      if(!z.startCam || !z.endCam || typeof z.startCam.lat === 'undefined'){
+        // attempt to geocode if text given (e.g. z.startText, z.endText)
+        if(z.startText) {
+          const g = await geocodePlace(z.startText);
+          if(g) z.startCam = { lat:g.lat, lon:g.lon };
+        }
+        if(z.endText){
+          const g2 = await geocodePlace(z.endText);
+          if(g2) z.endCam = { lat:g2.lat, lon:g2.lon };
+        }
+      }
+    }catch(e){
+      console.warn('geocode error', e);
     }
+  }
+  setStatus('Geocoding complete — check zones object in console');
+  console.log('Zones after geocode', zones);
+};
+
+/* OSRM route distance helper */
+function cacheKey(a,b){ return `${a.lat.toFixed(5)},${a.lon.toFixed(5)}->${b.lat.toFixed(5)},${b.lon.toFixed(5)}` }
+async function osrmRouteDist(from, to){
+  const key = cacheKey(from,to);
+  if(routeCache[key] && (Date.now() - routeCache[key].ts) < 60000) return routeCache[key].d;
+  const now = Date.now();
+  if(now - lastOSRM < 8000){ if(routeCache[key]) return routeCache[key].d; return haversine(from.lat,from.lon,to.lat,to.lon); }
+  lastOSRM = now;
+  const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`;
+  const url = `${OSRM_BASE}/route/v1/driving/${coords}?overview=false`;
+  try{
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('OSRM error');
+    const data = await r.json();
+    if(data && data.routes && data.routes.length){
+      const d = data.routes[0].distance;
+      routeCache[key] = { d, ts: Date.now() };
+      return d;
+    }
+    return haversine(from.lat,from.lon,to.lat,to.lon);
+  }catch(e){
+    console.warn('OSRM fail',e);
+    if(routeCache[key]) return routeCache[key].d;
+    return haversine(from.lat,from.lon,to.lat,to.lon);
   }
 }
 
-/* ====== On load: show example zones by default ====== */
-loadExampleZones();
+/* Haversine used in helper */
+function toRad(d){return d*Math.PI/180}
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371e3; const dLat = toRad(lat2-lat1); const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+/* Main: simulate update of requiredAvg and drive dial for demo */
+let demoReq = 0;
+function setRequiredAvg(val,lim=150){
+  updateF1Dial(val, lim);
+  // also show in readout text (already updated)
+}
+
+setInterval(()=>{ // demo pulse (if no tracking) - remove in real use
+  demoReq = (Math.sin(Date.now()/2200)+1)/2 * 120;
+  setRequiredAvg(Math.round(demoReq));
+}, 900);
+
+/* Expose APIs for integration with your tracker:
+   - call setRequiredAvg(value, speedLimit)
+   - call updateF1Dial(value, speedLimit)
+   - update readout values via showCurSpeed/showAvgSpeed/showDistLeft/showZoneName
+*/
+
+window.setRequiredAvg = setRequiredAvg;
+window.showCurSpeed = showCurSpeed;
+window.showAvgSpeed = showAvgSpeed;
+window.showDistLeft = showDistLeft;
+window.showZoneName = showZoneName;
+
+/* =========================
+   End of file
+   ========================= */
 </script>
-
-<!--
-  Notes & deployment tips:
-
-  • OSRM backend: this file uses the public router.project-osrm.org endpoint. That service is shared and has rate limits; for reliable production behavior you should host your own OSRM instance or use a paid routing API.
-
-  • Throttling: the client throttles OSRM calls to once every 10s and caches results per coordinate pair for 60s to avoid excessive requests.
-
-  • Edge cases: if routing fails the code falls back to straight-line distance (Haversine). That may underestimate road distance in areas with complex road networks.
-
-  • Map & visualization: you can easily add a small Leaflet map to show start/end cameras and live position. Let me know if you want that included.
-
-  • Server: you can serve this single HTML file from any static host (GitHub Pages, Netlify, nginx).
--->
-
 </body>
 </html>
+
