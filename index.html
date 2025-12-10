@@ -175,7 +175,7 @@ document.getElementById('setStart').onclick = ()=>{ navigator.geolocation.getCur
 
 document.getElementById('begin').onclick = async ()=>{ if(!speedZones.length) loadExampleZones(); setStatus('Starting tracking...'); watchId = navigator.geolocation.watchPosition(updatePosition, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true, maximumAge:1000, timeout:10000 }); }
 
-document.getElementById('stop').onclick = ()=>{ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null } currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null; setStatus('Stopped'); document.getElementById('zoneName').textContent='--'; document.getElementById('curZoneLabel').textContent='--'; document.getElementById('curLimit').textContent='-- km/h'; document.getElementById('avgSpeed').textContent='-- km/h'; document.getElementById('distTrav').textContent='-- km'; document.getElementById('distLeft').textContent='-- km'; document.getElementById('reqSpeed').textContent='-- km/h'; drawF1(0,150);
+document.getElementById('stop').onclick = ()=>{ if(watchId!==null){ navigator.geolocation.clearWatch(watchId); watchId=null } currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; lastGPS=null; setStatus('Stopped'); document.getElementById('zoneName').textContent='--'; document.getElementById('curZoneLabel').textContent='--'; document.getElementById('curLimit').textContent='-- km/h'; document.getElementById('avgSpeed').textContent='-- km/h'; document.getElementById('distTrav').textContent='-- km'; document.getElementById('distLeft').textContent='-- km'; document.getElementById('reqSpeed').textContent='-- km/h'; drawF1(0,0,150);
 }
 
 /* ===== Main GPS update ===== */
@@ -217,7 +217,7 @@ async function updatePosition(pos){
     document.getElementById('reqSpeed').textContent = requiredAvg > 0 ? requiredAvg.toFixed(1) + ' km/h' : '-- km/h';
 
     // update gauge with avg (gauge shows average only)
-    drawF1(avgKmh, limit);
+    drawF1(curKmh, avgKmh, limit);
 
     // zone finish
     if(remaining < 15){ const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000); const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours; alert(`Zone finished: ${currentZone.name}\nAverage speed: ${finalAvg.toFixed(1)} km/h\nLimit: ${currentZone.speedLimit} km/h`); currentZone=null; zoneStartTime=null; zoneDistanceTravelled=0; document.getElementById('zoneName').textContent='--'; document.getElementById('curZoneLabel').textContent='--'; document.getElementById('curLimit').textContent='-- km/h'; document.getElementById('avgSpeed').textContent='-- km/h'; document.getElementById('distTrav').textContent='-- km'; document.getElementById('distLeft').textContent='-- km'; document.getElementById('reqSpeed').textContent='-- km/h'; drawF1(0,150); }
@@ -230,76 +230,75 @@ loadExampleZones();
 /* ===== F1-style gauge rendering ===== */
 const f1 = document.getElementById('f1Gauge');
 const ctx = f1.getContext('2d');
-function drawF1(avg, limit){
+function drawF1(currentSpeed, avgSpeed, limit){
+  // Responsive canvas sizing and DPI
   const dpr = window.devicePixelRatio || 1;
-  const W = f1.clientWidth; const H = Math.round(W*0.55);
-  f1.width = Math.round(W*dpr); f1.height = Math.round(H*dpr);
+  const W = f1.clientWidth;
+  const H = Math.max(120, Math.round(W * 0.6));
+  f1.width = Math.round(W * dpr);
+  f1.height = Math.round(H * dpr);
   f1.style.height = H + 'px';
   ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,W,H);
 
-  const cx = W/2; const cy = H*1.05; const r = H*1.05;
+  // layout: keep circle fully inside canvas (avoid clipping)
+  const cx = W/2;
+  const cy = H * 0.95; // push center slightly above bottom
+  const r = Math.min(W*0.45, H*0.95);
 
-  // background subtle arc
-  ctx.lineWidth = Math.max(12, Math.round(H*0.08));
+  // determine color based on CURRENT speed vs limit
+  const safeLimit = Math.max(1, limit || 1);
+  const pct = Math.min(1, Math.max(0, (currentSpeed / safeLimit)));
+  let color = '#00ff66';
+  if(pct > 0.9) color = '#ff3b3b';
+  else if(pct > 0.7) color = '#ffe066';
+
+  // neon glow arc
+  ctx.lineWidth = Math.max(12, Math.round(H * 0.08));
   ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.shadowBlur = 30; ctx.shadowColor = color;
+  ctx.strokeStyle = color;
+  ctx.arc(cx, cy, r, Math.PI, 2*Math.PI, false);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // segments: green, yellow, red — proportions relative to limit
-  const segGreen = 0.6; // up to 60% of limit green
-  const segYellow = 0.85; // 60-85% yellow
-  const segRed = 1.0; // 85-100% red
-
-  // draw arc helper
-  function arc(fromPct, toPct, color){
-    const a1 = Math.PI + Math.PI*fromPct; // -90deg = start
-    const a2 = Math.PI + Math.PI*toPct;
-    ctx.beginPath(); ctx.strokeStyle = color; ctx.arc(cx,cy,r,a1,a2); ctx.stroke();
-  }
-
-  arc(0, segGreen, '#00ff66');
-  arc(segGreen, segYellow, '#ffe066');
-  arc(segYellow, segRed, '#ff3b3b');
-
-  // outline thin
+  // subtle outline for contrast
   ctx.beginPath(); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.arc(cx,cy,r,Math.PI,2*Math.PI); ctx.stroke();
 
-  // needle
-  const safeLimit = Math.max(1, limit);
-  const pct = Math.min(1, Math.max(0, (avg / safeLimit)));
+  // needle based on CURRENT speed
   const angle = Math.PI + (Math.PI * pct);
-  const nx = cx + Math.cos(angle) * (r*0.88);
-  const ny = cy + Math.sin(angle) * (r*0.88);
+  const nx = cx + Math.cos(angle) * (r * 0.88);
+  const ny = cy + Math.sin(angle) * (r * 0.88);
 
-  // shadow hub
+  // needle shadow/hub
   ctx.beginPath(); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.arc(cx,cy,10,0,2*Math.PI); ctx.fill();
-
-  // needle body
-  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.lineWidth = Math.max(3, Math.round(H*0.02)); ctx.strokeStyle = '#ffffff'; ctx.stroke();
-
-  // center cap
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.lineWidth = Math.max(3, Math.round(H*0.02)); ctx.strokeStyle = color; ctx.stroke();
   ctx.beginPath(); ctx.fillStyle = '#ffffff'; ctx.arc(cx,cy,5,0,2*Math.PI); ctx.fill();
 
-  // average number
+  // Average number in center (gauge shows average)
+  const avgDisplay = (isFinite(avgSpeed) && avgSpeed>0) ? Math.round(avgSpeed) : 0;
   ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = `700 ${Math.round(H*0.22)}px Inter, system-ui, sans-serif`;
-  const avgDisplay = isFinite(avg) && avg>0 ? Math.round(avg) : 0;
   ctx.fillText(`${avgDisplay}`, cx, H*0.55);
 
   // small "km/h"
   ctx.font = `14px Inter, system-ui, sans-serif`; ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText('km/h', cx, H*0.73);
 
-  // limit marker text (small)
+  // small labels
   ctx.font = '12px Inter, system-ui, sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillText(`Limit ${limit} km/h`, cx, H*0.95);
 }
 
 // initial draw
 window.addEventListener('load', ()=> drawF1(0,150) );
 window.addEventListener('resize', ()=>{ // redraw to keep proportions
-  // read current avg from UI
-  const raw = document.getElementById('avgSpeed').textContent.trim().split(' ')[0]; const v = parseFloat(raw); const limit = (currentZone ? currentZone.speedLimit : 150); drawF1(isNaN(v)?0:v, limit);
-});
+  // read current speeds from UI
+  const curRaw = document.getElementById('curSpeed').textContent.trim().split(' ')[0]; const cur = parseFloat(curRaw);
+  const avgRaw = document.getElementById('avgSpeed').textContent.trim().split(' ')[0]; const avg = parseFloat(avgRaw);
+  const limit = (currentZone ? currentZone.speedLimit : 150);
+  drawF1(isNaN(cur)?0:cur, isNaN(avg)?0:avg, limit);
+});;
 
 </script>
 
 </body>
 </html>
-
