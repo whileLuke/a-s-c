@@ -45,7 +45,11 @@ input,button{width:100%;padding:12px;border-radius:12px;border:1px solid #222;ba
   </div>
 
   <div class="card" style="text-align:center;margin-top:18px">
-    <div>Required Average Speed</div>
+  <div>Average Speed (Zone)</div>
+  <canvas id="f1Gauge" width="340" height="200" style="display:block;margin:20px auto 10px auto;"></canvas>
+  <div id="reqSpeed" style="font-size:32px;font-weight:600;margin-top:18px">--</div>
+  <div id="zoneName" style="margin-top:8px;color:var(--subtle)"></div>
+</div>
     <div class="gauge"><div id="needle" class="needle"></div></div>
     <div id="reqSpeed" class="gauge-value">--</div>
     <div id="zoneName" style="margin-top:8px;color:var(--subtle)"></div>
