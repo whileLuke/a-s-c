@@ -113,32 +113,32 @@ footer{margin-top:12px;color:var(--muted);font-size:12px}
 </div>
 
 <script>
-/* ===== Utilities ===== */
+/* Utilities */
 function toRad(d){return d*Math.PI/180}
 function haversine(lat1,lon1,lat2,lon2){const R=6371e3;const dLat=toRad(lat2-lat1);const dLon=toRad(lon2-lon1);const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))}
 function setStatus(t){document.getElementById('status').textContent=t}
 
-/* ===== OSRM config ===== */
+/* OSRM config */
 const OSRM_BASE = 'https://router.project-osrm.org';
 const OSRM_ROUTE_THROTTLE_MS = 10000;
 
-/* ===== State ===== */
+/* State */
 let speedZones = [];
 let currentZone = null;
 let zoneStartTime = null;
-let zoneDistanceTravelled = 0; // meters
+let zoneDistanceTravelled = 0; // metres
 let lastGPS = null;
 let watchId = null;
 let lastOSRMCall = 0;
 let routeCache = {};
 
-/* ===== Example zones ===== */
+/* Example zones */
 const exampleZones = [
   { id:'zone-1', name:'M4 Motorway — Zone 1', speedLimit:90, startCam:{lat:-33.8601,lon:151.2040}, endCam:{lat:-33.8405,lon:151.2310} },
   { id:'zone-2', name:'M5 Tunnel — Zone 2', speedLimit:80, startCam:{lat:-33.9402,lon:151.0502}, endCam:{lat:-33.9551,lon:151.0877} }
 ];
 
-/* ===== Route distance (OSRM) ===== */
+/* Route distance (OSRM) */
 function getRouteCacheKey(fromLat,fromLon,toLat,toLon){return `${fromLat.toFixed(5)},${fromLon.toFixed(5)}->${toLat.toFixed(5)},${toLon.toFixed(5)}`}
 async function fetchRouteDistance(fromLat,fromLon,toLat,toLon){
   const key = getRouteCacheKey(fromLat,fromLon,toLat,toLon);
@@ -157,14 +157,14 @@ async function fetchRouteDistance(fromLat,fromLon,toLat,toLon){
   }catch(e){ console.warn('OSRM fetch failed',e); if(routeCache[key]) return routeCache[key].distance; return haversine(fromLat,fromLon,toLat,toLon); }
 }
 
-/* ===== Load zones ===== */
+/* Load zones */
 async function loadZonesFromUrl(url){ try{ const r = await fetch(url); if(!r.ok) throw new Error('Load failed '+r.status); const data = await r.json(); speedZones = data; setStatus(`Loaded ${speedZones.length} zones`); }catch(e){ setStatus('Load failed: '+e.message) } }
 function loadExampleZones(){ speedZones = exampleZones; setStatus('Loaded example zones') }
 
-/* ===== Zone detection ===== */
+/* Zone detection */
 function detectZoneEntry(lat,lon){ for(const z of speedZones){ const d = haversine(lat,lon,z.startCam.lat,z.startCam.lon); if(d < 50) return z } return null }
 
-/* ===== UI actions ===== */
+/* UI actions */
 document.getElementById('loadZones').onclick = async ()=>{ const url = document.getElementById('zonesUrl').value.trim(); if(!url){ loadExampleZones(); return } await loadZonesFromUrl(url) }
 
 document.getElementById('setStart').onclick = ()=>{ navigator.geolocation.getCurrentPosition(p=>{ lastGPS = {lat:p.coords.latitude, lon:p.coords.longitude}; setStatus('Start set from GPS') }, e=>setStatus('GPS error: '+e.message), { enableHighAccuracy:true }) }
@@ -185,12 +185,12 @@ document.getElementById('stop').onclick = ()=>{
   drawF1(0,150);
 }
 
-/* ===== Main GPS update ===== */
+/* Main GPS update */
 async function updatePosition(pos){
   const lat = pos.coords.latitude; const lon = pos.coords.longitude; const acc = pos.coords.accuracy;
   if(acc > 50){ setStatus('Poor GPS accuracy: '+acc.toFixed(0)+'m'); return }
 
-  // distance segment
+  // Distance segment
   let seg = 0;
   if(lastGPS){ 
     seg = haversine(lastGPS.lat,lastGPS.lon,lat,lon); 
@@ -198,16 +198,16 @@ async function updatePosition(pos){
   }
   lastGPS = {lat,lon};
 
-  // current speed
+  // Current speed
   let curKmh = (pos.coords.speed !== null && pos.coords.speed >= 0) ? pos.coords.speed*3.6 : 0;
-  // if GPS speed unavailable, fallback to distance/time
+  // If GPS speed unavailable, fallback to distance/time
   if(pos.coords.speed===null && lastGPS && zoneStartTime){
     const elapsedSec = (Date.now() - zoneStartTime)/1000;
     curKmh = (zoneDistanceTravelled/1000)/(elapsedSec/3600);
   }
   document.getElementById('curSpeed').textContent = curKmh.toFixed(1) + ' km/h';
 
-  // zone entry
+  // Zone entry
   if(!currentZone){ const zone = detectZoneEntry(lat,lon); if(zone){ currentZone = zone; zoneStartTime = Date.now(); zoneDistanceTravelled = 0; setStatus('Entered zone: '+zone.name); document.getElementById('zoneName').textContent = zone.name; document.getElementById('curZoneLabel').textContent = zone.name; document.getElementById('curLimit').textContent = zone.speedLimit + ' km/h'; } }
 
   if(currentZone){
@@ -216,12 +216,12 @@ async function updatePosition(pos){
     document.getElementById('avgSpeed').textContent = avgKmh>0? avgKmh.toFixed(1)+' km/h' : '0 km/h';
     document.getElementById('distTrav').textContent = (zoneDistanceTravelled/1000).toFixed(3) + ' km';
 
-    // remaining distance
+    // Remaining distance
     let remaining = haversine(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon);
     try{ const routeDist = await fetchRouteDistance(lat,lon,currentZone.endCam.lat,currentZone.endCam.lon); remaining = routeDist }catch(e){ console.warn('Route fetch error',e) }
     document.getElementById('distLeft').textContent = (remaining/1000).toFixed(3) + ' km';
 
-    // required average calculation (for remainder to achieve zone limit)
+    // Required average calculation (for remainder to achieve average speed limit)
     const travelledKm = zoneDistanceTravelled/1000;
     const remainingKm = Math.max(0.000001, remaining/1000);
     const totalKm = travelledKm + remainingKm;
@@ -231,10 +231,10 @@ async function updatePosition(pos){
     if(numerator > 0){ requiredAvg = numerator / remainingKm; requiredAvg = Math.min(requiredAvg, 300); }
     document.getElementById('reqSpeed').textContent = requiredAvg > 0 ? requiredAvg.toFixed(1) + ' km/h' : '-- km/h';
 
-    // update gauge with avg
+    // Update gauge with avg
     drawF1(avgKmh, limit);
 
-    // zone finish
+    // Zone finish
     if(remaining < 15){ 
       const finalElapsedHours = Math.max(1e-6,(Date.now()-zoneStartTime)/3600000); 
       const finalAvg = (zoneDistanceTravelled/1000)/finalElapsedHours; 
@@ -252,10 +252,9 @@ async function updatePosition(pos){
   }
 }
 
-/* ===== On load ===== */
 loadExampleZones();
 
-/* ===== F1-style gauge rendering ===== */
+/* Speed gauge rendering */
 const f1 = document.getElementById('f1Gauge');
 const ctx = f1.getContext('2d');
 function drawF1(avg, limit){
